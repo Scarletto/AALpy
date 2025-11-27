@@ -46,7 +46,7 @@ class MooreNode:
 
 class MealyNode:
     _id_counter = 0
-    __slots__ = ['id', 'successors', 'parent', 'input_to_parent']
+    __slots__ = ['id', 'successors', 'parent', 'input_to_parent', 'has_inferred_subtree']
 
     def __init__(self, parent=None):
         MealyNode._id_counter += 1
@@ -54,6 +54,7 @@ class MealyNode:
         self.successors = {}
         self.parent = parent
         self.input_to_parent = None
+        self.has_inferred_subtree = False
 
     def __hash__(self):
         return hash(self.id)
@@ -74,37 +75,77 @@ class MealyNode:
             return self.successors[input_val][0]
         return None
 
-    def extend_and_get(self, inp, output):
-        """ Extend the node with a new successor and return the successor node """
-        if inp in self.successors:
-            out = self.successors[inp][0]
-            if out != output:
-                raise Exception(
-                    f"observation not consistent with tree with output from tree: {out} and output from call: {output}")
-            return self.successors[inp][1]
-        successor_node = MealyNode(parent=self)
-        self.add_successor(inp, output, successor_node)
-        successor_node.input_to_parent = inp
-        return successor_node
-
     @property
     def id_counter(self):
         return self._id_counter
 
+class MealyCrashLeaf(MealyNode):
+    def __init__(self, parent):
+        super().__init__(parent=parent)
+        self.has_inferred_subtree = True
+    
+    def add_successor(self, input_val, output_val, successor_node):
+        pass
+    
+    def get_successor(self, input_val):
+        return self
+    
+    def get_output(self, input_val):
+        return self.parent.get_output(self.input_to_parent)
+
+class MealyRetryLeaf(MealyNode):
+    def __init__(self, parent):
+        super().__init__(parent=parent)
+        self.has_inferred_subtree = True
+    
+    def add_successor(self, input_val, output_val, successor_node):
+        return self.parent.add_successor(input_val, output_val, successor_node)
+    
+    def get_successor(self, input_val):
+        return self.parent.get_successor(input_val)
+    
+    def get_output(self, input_val):
+        return self.parent.get_output(input_val)
+    
+class MealyGotoSourceNode(MealyNode):
+    def __init__(self, parent, goto_output):
+        super().__init__(parent=parent)
+        self.has_inferred_subtree = True
+        self.goto_output = goto_output
+
+class MealyGotoLeaf(MealyGotoSourceNode):
+    def __init__(self, parent, goto_output, representing_node):
+        super().__init__(parent=parent, goto_output=goto_output)
+        self.has_inferred_subtree = True
+        self.representing_node = representing_node
+    
+    def add_successor(self, input_val, output_val, successor_node):
+        return self.representing_node.add_successor(input_val, output_val, successor_node)
+    
+    def get_successor(self, input_val):
+        return self.representing_node.get_successor(input_val)
+    
+    def get_output(self, input_val):
+        return self.representing_node.get_output(input_val)
 
 class ObservationTree:
-    def __init__(self, alphabet, sul, automaton_type, extension_rule, separation_rule):
+    def __init__(self, alphabet, sul, automaton_type, extension_rule, separation_rule, crash_output=None, retry_output=None, goto_outputs=[]):
         """
         Initialize the tree with a root node and the alphabet
         """
         assert automaton_type in aut_type
         assert alphabet is not None and sul is not None
+        if automaton_type != 'mealy':
+            assert crash_output is None and retry_output is None and not goto_outputs
 
         self.automaton_type = automaton_type
         self.alphabet = alphabet
         self.sul = sul
         self.extension_rule = extension_rule
         self.separation_rule = separation_rule
+        self.crash_output = crash_output
+        self.retry_output = retry_output
+        self.goto_outputs_map = {output: None for output in goto_outputs}
 
         if self.automaton_type == 'mealy':
             self.root = MealyNode()
@@ -121,6 +162,34 @@ class ObservationTree:
         self.witness_cache = {}
         # Maps the basis states to hypothesis states
         self.states_dict = dict()
+    
+    def extend_and_get_mealy(self, node, input, output):
+        """ Extend the node with a new successor and return the successor node """
+        assert self.automaton_type == 'mealy'
+
+        if input in node.successors:
+            out = node.successors[input][0]
+            if out != output:
+                raise Exception(
+                    f"observation not consistent with tree with output from tree: {out} and output from call: {output}")
+            return node.successors[input][1]
+        
+        if output == self.crash_output:
+            successor_node = MealyCrashLeaf(parent=node)
+        elif output == self.retry_output:
+            successor_node = MealyRetryLeaf(parent=node)
+        elif output in self.goto_outputs_map.keys():
+            if self.goto_outputs_map[output] is not None:
+                successor_node = MealyGotoLeaf(parent=node, goto_output=output, representing_node=self.goto_outputs_map[output])
+            else:
+                successor_node = MealyGotoSourceNode(parent=node, goto_output=output)
+                self.goto_outputs_map[output] = successor_node
+        else:
+            successor_node = MealyNode(parent=node)
+
+        node.add_successor(input, output, successor_node)
+        successor_node.input_to_parent = input
+        return successor_node
 
     def insert_observation(self, inputs, outputs):
         # Insert an observation into the tree using sequences of inputs and outputs
@@ -129,7 +198,10 @@ class ObservationTree:
 
         current_node = self.root
         for input_val, output_val in zip(inputs, outputs):
-            current_node = current_node.extend_and_get(input_val, output_val)
+            if self.automaton_type == 'mealy':
+                current_node = self.extend_and_get_mealy(current_node, input_val, output_val)
+            else:
+                current_node = current_node.extend_and_get(input_val, output_val)
 
     def get_observation(self, inputs):
         # Retrieve the list of outputs based on a given input sequence
@@ -147,24 +219,25 @@ class ObservationTree:
             observation.append(output)
         return observation
 
-    def get_outputs(self, basis_state, inputs):
-        # Retrieve the list of outputs based on a basis state and a given input sequence
-        prefix = self.get_transfer_sequence(self.root, basis_state)
-        current_node = self.get_successor(prefix)
-        observation = []
-        for input_val in inputs:
-            if self.automaton_type == 'mealy':
-                output = current_node.get_output(input_val)
-            else:
-                output = current_node.output
-            if output is None:
-                return None
-            observation.append(output)
-            current_node = current_node.get_successor(input_val)
+    # SEEMS TO BE UNUSED
+    # def get_outputs(self, basis_state, inputs):
+    #     # Retrieve the list of outputs based on a basis state and a given input sequence
+    #     prefix = self.get_transfer_sequence(self.root, basis_state)
+    #     current_node = self.get_successor(prefix)
+    #     observation = []
+    #     for input_val in inputs:
+    #         if self.automaton_type == 'mealy':
+    #             output = current_node.get_output(input_val)
+    #         else:
+    #             output = current_node.output
+    #         if output is None:
+    #             return None
+    #         observation.append(output)
+    #         current_node = current_node.get_successor(input_val)
 
-        return observation
+    #     return observation
 
-    def get_successor(self, inputs):
+    def get_destination_node(self, inputs):
         # Retrieve the node (subtree) corresponding to the given input sequence
         current_node = self.root
         for input_val in inputs:
@@ -176,6 +249,7 @@ class ObservationTree:
         return current_node
 
     def get_transfer_sequence(self, from_node, to_node):
+        # TODO: how will this work with goto/retry/crash nodes?
         # Get the transfer sequence (inputs) that moves from one node to another
         transfer_sequence = []
         current_node = to_node
@@ -190,7 +264,7 @@ class ObservationTree:
         return transfer_sequence
 
     def get_access_sequence(self, to_node):
-        # Get the transfer sequence (inputs) that moves from one node to another
+        # Get the access sequence (inputs) to reach a specific node from the root
         transfer_sequence = []
         current_node = to_node
 
@@ -305,6 +379,8 @@ class ObservationTree:
         }
 
     def explore_frontier(self, basis_state, inp):
+        # TODO: how does this interact with optimizations for crash/retry/goto nodes?
+
         # Explores a specific frontier state (basis state + input) by passing a query to the SUL
         if self.extension_rule is None or (self.extension_rule == "SepSeq" and len(self.basis) == 1):
             inputs = self.get_transfer_sequence(self.root, basis_state)
@@ -335,7 +411,7 @@ class ObservationTree:
 
     def adaptive_output_query_base(self, prefix, ads):
         # Query the tree for a result, if unsuccessful query the SUL and update the tree
-        from_node = self.get_successor(prefix)
+        from_node = self.get_destination_node(prefix)
         if from_node:
             tree_in, tree_out = self._answer_ads_from_tree(ads, from_node)
             ads.reset_to_root()
@@ -552,7 +628,7 @@ class ObservationTree:
         """
         use binary search on the counter example to compute a witness between the real system and the hypothesis
         """
-        tree_node = self.get_successor(cex_inputs)
+        tree_node = self.get_destination_node(cex_inputs)
         self.update_frontier_and_basis()
 
         if tree_node in self.frontier_to_basis_dict or tree_node in self.basis:
@@ -590,7 +666,7 @@ class ObservationTree:
 
         self.insert_observation(query_inputs, query_outputs)
 
-        tree_node_p = self.get_successor(sigma1)
+        tree_node_p = self.get_destination_node(sigma1)
 
         witness_p = Apartness.compute_witness(tree_node_p, hyp_node_p, self)
 
@@ -607,3 +683,32 @@ class ObservationTree:
             automaton.current_state = automaton.current_state.transitions[inp]
 
         return automaton.current_state
+    
+    def _optimizations_preprocess_input(self, input_sequence):
+        if self.automaton_type != 'mealy':
+            return input_sequence
+        
+        assert isinstance(self.root, MealyNode)
+        optimized_sequence = []
+        current_node = self.root
+
+        for i in range(len(input_sequence)):
+            inp = input_sequence[i]
+            outp = current_node.get_output(inp)
+            succ = current_node.get_successor(inp)
+
+            if obs is None or succ is None:
+                optimized_sequence.extend(input_sequence[i:])
+                break
+            
+            current_node = succ
+
+            if outp == self.crash_output:
+                optimized_sequence.append(inp)
+                break
+            elif outp == self.retry_output:
+                continue
+
+        return optimized_sequence
+
+

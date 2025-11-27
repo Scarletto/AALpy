@@ -359,7 +359,7 @@ class AdaptiveObservationTree(ObservationTree):
         """
         for reference_id in range(0, len(self.references)):
             for reference_prefix in self.prefixes_map[reference_id]:
-                ob_tree_state = self.get_successor(reference_prefix)
+                ob_tree_state = self.get_destination_node(reference_prefix)
                 if not ob_tree_state:
                     continue
                 basis_parent = ob_tree_state.parent
@@ -377,7 +377,7 @@ class AdaptiveObservationTree(ObservationTree):
                 frontier_state_access = self.get_access_sequence(
                     basis_state_one) + (inp,)
                 frontier_state = basis_state_one.get_successor(inp)
-                if self.get_successor(frontier_state_access) in self.new_basis:
+                if self.get_destination_node(frontier_state_access) in self.new_basis:
                     continue
                 if self.find_basis_frontier_pair(frontier_state, frontier_state_access):
                     return self.find_basis_frontier_pair(frontier_state, frontier_state_access)
@@ -406,8 +406,8 @@ class AdaptiveObservationTree(ObservationTree):
 
                 sep_seq = self.find_distinguishing_seq_partial(reference,
                     state_one, state_two, self.alphabet)
-                if sep_seq and (self.get_successor(frontier_state_access + tuple(sep_seq)) is None or
-                                self.get_successor(basis_state_access + tuple(sep_seq)) is None):
+                if sep_seq and (self.get_destination_node(frontier_state_access + tuple(sep_seq)) is None or
+                                self.get_destination_node(basis_state_access + tuple(sep_seq)) is None):
                     return basis_state_access, frontier_state_access, tuple(sep_seq)
         return None
 

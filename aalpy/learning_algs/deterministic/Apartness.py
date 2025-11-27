@@ -1,5 +1,5 @@
 from collections import deque
-
+from aalpy.learning_algs.deterministic.ObservationTree import MealyCrashLeaf, MealyRetryLeaf, MealyGotoSourceNode, MealyGotoLeaf
 
 class Apartness:
     @staticmethod
@@ -30,6 +30,7 @@ class Apartness:
 
         while pairs:
             first_node, second_node = pairs.popleft()
+
             for input_val in alphabet:
                 first_output = first_node.get_output(input_val)
                 second_output = second_node.get_output(input_val)
@@ -38,8 +39,13 @@ class Apartness:
                     if first_output != second_output:
                         return first_node.get_successor(input_val)
 
-                    pairs.append((first_node.get_successor(
-                        input_val), second_node.get_successor(input_val)))
+                    first_successor = first_node.get_successor(input_val)
+                    second_successor = second_node.get_successor(input_val)
+
+                    if first_successor.has_inferred_subtree and second_successor.has_inferred_subtree:
+                        continue
+
+                    pairs.append((first_successor, second_successor))
 
         return None
 

@@ -37,7 +37,6 @@ class SUL(ABC):
             out = [self.step(letter) for letter in word]
         self.post()
         self.num_queries += 1
-        self.num_steps += len(word)
         return out
 
     def io_query(self, word : tuple):
@@ -68,8 +67,6 @@ class SUL(ABC):
             output = self.step(inp)
             outputs_received.append(output)
 
-        self.num_steps += len(word)
-
         while True:
             next_input = ads.next_input(last_output)
             if next_input is None:
@@ -84,7 +81,6 @@ class SUL(ABC):
                 output = self.step(next_input) 
                 outputs_received.append(output)
                 last_output = output
-                self.num_steps += 1
 
         self.num_queries += 1
         self.post()
@@ -190,4 +186,6 @@ class CacheSUL(SUL):
         """
         out = self.sul.step(letter)
         self.cache.step_in_cache(letter, out)
+
+        self.num_steps += 1
         return out

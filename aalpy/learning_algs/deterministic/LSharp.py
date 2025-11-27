@@ -8,6 +8,7 @@ from ...base.SUL import CacheSUL
 
 def run_Lsharp(alphabet: list, sul: SUL, eq_oracle: Oracle, automaton_type,
                extension_rule='SepSeq', separation_rule="ADS", samples=None,
+               crash_output = None, retry_output = None, goto_outputs: list = [],
                max_learning_rounds=None, cache_and_non_det_check=True, return_data=False, print_level=2):
     """
     Based on ''A New Approach for Active Automata Learning Based on Apartness'' from Vaandrager, Garhewal, Rot and Wissmann. 
@@ -32,6 +33,15 @@ def run_Lsharp(alphabet: list, sul: SUL, eq_oracle: Oracle, automaton_type,
         samples: input output traces provided to the learning algorithm. They are added to cache and could reduce
         total interaction with the system. Syntax: list of [(input_sequence, output_sequence)] or None
 
+        crash_output: output that indicates a transition into a sink state, through i.e. a program crash (Default value = None).
+        Only compatible with Mealy machines.
+
+        retry_output: output that indicate a self-loop, through i.e. a failed input that can be retried (Default value = None).
+        Only compatible with Mealy machines.
+
+        goto_outputs: list of outputs that indicate a transition to some specific state, through i.e. a menu navigation or the back button (Default value = []).
+        The different outputs (may) go to different SUL states. Only compatible with Mealy machines.
+
         max_learning_rounds: number of learning rounds after which learning will terminate (Default value = None)
 
         cache_and_non_det_check: Use caching and non-determinism checks (Default value = True)
@@ -49,6 +59,8 @@ def run_Lsharp(alphabet: list, sul: SUL, eq_oracle: Oracle, automaton_type,
     """
     assert extension_rule in {None, "SepSeq", "ADS"}
     assert separation_rule in {"SepSeq", "ADS"}
+    if automaton_type != 'mealy':
+        assert crash_output is None and retry_output is None and not goto_outputs
 
     if cache_and_non_det_check or samples is not None:
         # Wrap the sul in the CacheSUL, so that all steps/queries are cached
@@ -59,7 +71,7 @@ def run_Lsharp(alphabet: list, sul: SUL, eq_oracle: Oracle, automaton_type,
             for input_seq, output_seq in samples:
                 sul.cache.add_to_cache(input_seq, output_seq)
 
-    ob_tree = ObservationTree(alphabet, sul, automaton_type, extension_rule, separation_rule)
+    ob_tree = ObservationTree(alphabet, sul, automaton_type, extension_rule, separation_rule, crash_output, retry_output, goto_outputs)
     start_time = time.time()
 
     eq_query_time = 0
