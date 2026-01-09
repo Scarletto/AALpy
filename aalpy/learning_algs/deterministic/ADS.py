@@ -82,6 +82,11 @@ class Ads:
             children = {}
 
             for output, partition in input_partitions.items():
+                # Skip inferred subtrees because they do not provide additional distinguishing power.
+                # Note that placing this line here still allows nodes with inferred subtrees in 
+                # the basis (initial block) to be expanded.
+                partition = [node for node in partition if node.has_inferred_subtree is False]
+
                 output_score, subtree = self.compute_output_subtree(ob_tree, partition, u_i) 
                 input_score += output_score
                 children[output] = subtree

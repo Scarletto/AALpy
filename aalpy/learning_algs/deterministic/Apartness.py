@@ -1,5 +1,4 @@
 from collections import deque
-from aalpy.learning_algs.deterministic.ObservationTree import MealyCrashLeaf, MealyRetryLeaf, MealyGotoSourceNode, MealyGotoLeaf
 
 class Apartness:
     @staticmethod
@@ -87,6 +86,10 @@ class Apartness:
 
         while pairs:
             tree_state, hyp_state = pairs.popleft()
+
+            if ob_tree.automaton_type == 'mealy':
+                if tree_state.has_inferred_subtree:
+                    continue
 
             for input_val in ob_tree.alphabet:
                 tree_output = tree_state.get_output(input_val)

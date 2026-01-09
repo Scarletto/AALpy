@@ -37,55 +37,55 @@ class SUL(ABC):
             out = [self.step(letter) for letter in word]
         self.post()
         self.num_queries += 1
+        self.num_steps += len(word)
         return out
 
     def io_query(self, word : tuple):
         return list(zip(word, self.query(word)))
+    
+    def start_query(self):
+        self.pre()
+        self.num_queries += 1
 
-    def adaptive_query(self, word, ads):
+    def end_query(self):
+        self.post()
+
+    def single_step(self, letter):
         """
-
-        Performs an adaptive output query on the SUL. Before the query, pre() method is called and after the query post()
-        method is called. The ADS is a tree like object, the next input depends on the previous input-output pairs. Each input is executed using the step method. Currently only implemented for Mealy machines
+        Executes a single input on the SUL using the step method. Does not clean anything (no pre() or post() call).
 
         Args:
 
-            word: membership query (word consisting of letters/inputs)
+            letter: single input
 
-            ads: adaptive distinguishing suffix
+        Returns:
+
+            output received after executing the input
+
+        """
+        out = self.step(letter)
+        self.num_steps += 1
+        return out
+    
+    def steps(self, word):
+        """
+        Executes a sequence of inputs on the SUL using the step method. Does not clean anything (no pre() or post() call).
+
+        Args:
+
+            word: sequence of inputs
 
         Returns:
 
             list of outputs, where the i-th output corresponds to the output of the system after the i-th input
+
         """
-        self.pre()
-
-        outputs_received = []
-        last_output = None
-
-        for inp in word:
-            output = self.step(inp)
-            outputs_received.append(output)
-
-        while True:
-            next_input = ads.next_input(last_output)
-            if next_input is None:
-                break
-            if next_input is tuple(): # Relevant for DFA/Moore
-                if outputs_received:
-                    last_output = outputs_received[-1]
-                else:
-                    last_output = self.step(None)
-            else:
-                word.append(next_input)
-                output = self.step(next_input) 
-                outputs_received.append(output)
-                last_output = output
-
-        self.num_queries += 1
-        self.post()
-
-        return word, outputs_received
+        if len(word) == 0:
+            out = [self.step(None)]
+        else:
+            out = [self.step(letter) for letter in word]
+        self.num_steps += len(word)
+        return out
 
     @abstractmethod
     def pre(self):
@@ -186,6 +186,5 @@ class CacheSUL(SUL):
         """
         out = self.sul.step(letter)
         self.cache.step_in_cache(letter, out)
-
-        self.num_steps += 1
         return out
+    

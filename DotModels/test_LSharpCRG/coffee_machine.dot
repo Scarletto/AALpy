@@ -1,0 +1,45 @@
+// CRASH:  F
+// RETRY:  W
+// GOTO:   *
+
+digraph coffee_machine {
+clean [label="clean"];
+pod [label="pod"];
+water [label="water"];
+ready [label="ready"];
+done [label="done"];
+fail [label="fail"];
+
+clean -> clean [label="clean/*"]
+clean -> pod [label="pod/O"]
+clean -> water [label="water/O"]
+clean -> fail [label="button/F"]
+
+pod -> clean [label="clean/*"]
+pod -> pod [label="pod/W"]
+pod -> ready [label="water/O"]
+pod -> fail [label="button/F"]
+
+water -> clean [label="clean/*"]
+water -> ready [label="pod/O"]
+water -> water [label="water/W"]
+water -> fail [label="button/F"]
+
+ready -> clean [label="clean/*"]
+ready -> ready [label="pod/W"]
+ready -> ready [label="water/W"]
+ready -> done [label="button/COFFEE"]
+
+done -> clean [label="clean/*"]
+done -> fail [label="pod/F"]
+done -> fail [label="water/F"]
+done -> fail [label="button/F"]
+
+fail -> fail [label="clean/F"]
+fail -> fail [label="pod/F"]
+fail -> fail [label="water/F"]
+fail -> fail [label="button/F"]
+
+__start0 [label="", shape=none];
+__start0 -> clean  [label=""];
+}
