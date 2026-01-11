@@ -14,6 +14,9 @@ class SUL(ABC):
         self.num_queries = 0
         self.num_steps = 0
         self.num_cached_queries = 0
+        self.num_inferred_outputs = 0
+        self.num_inferred_outputs_end_of_query = 0
+        self.output_tracker = []
 
     def query(self, word: tuple) -> list:
         """
@@ -38,6 +41,11 @@ class SUL(ABC):
         self.post()
         self.num_queries += 1
         self.num_steps += len(word)
+        for o in out:
+            if o == " 221" or o == " 500":
+                self.num_inferred_outputs += 1
+        if out and (out[-1] == " 221" or out[-1] == " 500"):
+            self.num_inferred_outputs_end_of_query += 1
         return out
 
     def io_query(self, word : tuple):
@@ -48,6 +56,9 @@ class SUL(ABC):
         self.num_queries += 1
 
     def end_query(self):
+        if self.output_tracker and (self.output_tracker[-1] == " 221" or self.output_tracker[-1] == " 500"):
+            self.num_inferred_outputs_end_of_query += 1
+        self.output_tracker = []
         self.post()
 
     def single_step(self, letter):
@@ -65,6 +76,9 @@ class SUL(ABC):
         """
         out = self.step(letter)
         self.num_steps += 1
+        # if out == " 221" or out == " 500":
+        #     self.num_inferred_outputs += 1
+        # self.output_tracker.append(out)
         return out
     
     def steps(self, word):
@@ -85,6 +99,10 @@ class SUL(ABC):
         else:
             out = [self.step(letter) for letter in word]
         self.num_steps += len(word)
+        for o in out:
+            if o == " 221" or o == " 500":
+                self.num_inferred_outputs += 1
+        self.output_tracker.extend(out)
         return out
 
     @abstractmethod
@@ -159,6 +177,11 @@ class CacheSUL(SUL):
 
         self.num_queries += 1
         self.num_steps += len(word)
+        for o in out:
+            if o == " 221" or o == " 500":
+                self.num_inferred_outputs += 1
+        if out and (out[-1] == " 221" or out[-1] == " 500"):
+            self.num_inferred_outputs_end_of_query += 1
         return out
 
     def pre(self):

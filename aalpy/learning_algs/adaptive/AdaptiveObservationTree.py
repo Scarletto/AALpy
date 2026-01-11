@@ -325,7 +325,7 @@ class AdaptiveObservationTree(ObservationTree):
             output_val = outputs[i]
             if current_node in self.basis:
                 to_recalc.append(current_node)
-            if input_val not in current_node.successors and split is None:
+            if input_val not in current_node.successors.keys() and split is None:
                 split = (inputs[:i], inputs[i:])
             current_node = current_node.extend_and_get(input_val, output_val)
 
@@ -423,7 +423,7 @@ class AdaptiveObservationTree(ObservationTree):
         for i in range(0, len(inputs)):
             input_val = inputs[i]
             output_val = outputs[i]
-            if input_val not in current_node.successors and split is None:
+            if input_val not in current_node.successors.keys() and split is None:
                 split = (inputs[:i], inputs[i:])
             current_node = current_node.extend_and_get(input_val, output_val)
         if split:

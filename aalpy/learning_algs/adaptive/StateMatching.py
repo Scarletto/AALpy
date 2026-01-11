@@ -101,7 +101,7 @@ class StateMatching:
         """
         leaf = True
         for inp in self.alphabet:
-            if inp in current_state.successors:
+            if inp in current_state.successors.keys():
                 new_seqs = self.find_longest_words(
                     current_state.get_successor(inp), ob_tree, all_seqs)
                 for new_seq in new_seqs:

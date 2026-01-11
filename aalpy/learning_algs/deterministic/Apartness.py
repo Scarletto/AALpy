@@ -41,6 +41,7 @@ class Apartness:
                     first_successor = first_node.get_successor(input_val)
                     second_successor = second_node.get_successor(input_val)
 
+                    # If inputs are equal and successors have inferred subtrees, skip further exploration because they cannot provide distinguishing information
                     if first_successor.has_inferred_subtree and second_successor.has_inferred_subtree:
                         continue
 
@@ -87,21 +88,21 @@ class Apartness:
         while pairs:
             tree_state, hyp_state = pairs.popleft()
 
-            if ob_tree.automaton_type == 'mealy':
-                if tree_state.has_inferred_subtree:
-                    continue
-
             for input_val in ob_tree.alphabet:
                 tree_output = tree_state.get_output(input_val)
 
                 if tree_output is not None and input_val in hyp_state.output_fun:
                     hyp_output = hyp_state.output_fun[input_val]
-                    if tree_output != hyp_output:
-                        tree_dest = tree_state.get_successor(input_val)
-                        return ob_tree.get_transfer_sequence(ob_tree_state, tree_dest)
 
-                    pairs.append((tree_state.get_successor(
-                        input_val), hyp_state.transitions[input_val]))
+                    tree_dest = tree_state.get_successor(input_val)
+                    if tree_output != hyp_output:
+                        return ob_tree.get_transfer_sequence(ob_tree_state, tree_dest)
+                    
+                    if ob_tree.automaton_type == 'mealy':
+                        if tree_dest.has_inferred_subtree:
+                            continue
+
+                    pairs.append((tree_dest, hyp_state.transitions[input_val]))
 
         return None
 

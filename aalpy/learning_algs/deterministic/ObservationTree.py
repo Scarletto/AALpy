@@ -100,6 +100,7 @@ class MealyRetryLeaf(MealyNode):
         self.has_inferred_subtree = True
     
     def add_successor(self, input_val, output_val, successor_node):
+        successor_node.parent = self.parent
         return self.parent.add_successor(input_val, output_val, successor_node)
     
     def get_successor(self, input_val):
@@ -126,6 +127,7 @@ class MealyGotoLeaf(MealyGotoNode):
         super().__init__(parent=parent, representing_node=representing_node)
 
     def add_successor(self, input_val, output_val, successor_node):
+        successor_node.parent = self.representing_node
         return self.representing_node.add_successor(input_val, output_val, successor_node)
     
     def get_successor(self, input_val):
@@ -152,6 +154,7 @@ class ObservationTree:
         self.crash_output = crash_output
         self.retry_output = retry_output
         self.goto_outputs_map = {output: None for output in goto_outputs}
+        self.goto_is_in_basis = False
 
         if self.automaton_type == 'mealy':
             self.root = MealyNode()
@@ -180,12 +183,12 @@ class ObservationTree:
         """ Extend the node with a new successor and return the successor node """
         assert self.automaton_type == 'mealy'
 
-        if input in node.successors:
-            out = node.successors[input][0]
+        if input in node.successors.keys():
+            out = node.get_output(input)
             if out != output:
                 raise Exception(
                     f"observation not consistent with tree with output from tree: {out} and output from call: {output}")
-            return node.successors[input][1]
+            return node.get_successor(input)
    
         if output == self.crash_output:
             successor_node = MealyCrashLeaf(parent=node)
@@ -265,7 +268,6 @@ class ObservationTree:
         return current_node
 
     def get_transfer_sequence(self, from_node, to_node):
-        # TODO: how will this work with goto/retry/crash nodes?
         # Get the transfer sequence (inputs) that moves from one node to another
         transfer_sequence = []
         current_node = to_node
@@ -281,17 +283,25 @@ class ObservationTree:
 
     def get_access_sequence(self, to_node):
         # Get the access sequence (inputs) to reach a specific node from the root
-        transfer_sequence = []
-        current_node = to_node
-
-        while current_node != self.root:
-            if current_node.parent is None:
-                return None
-            transfer_sequence.append(current_node.input_to_parent)
-            current_node = current_node.parent
-
-        transfer_sequence.reverse()
-        return transfer_sequence
+        return self.get_transfer_sequence(self.root, to_node)
+    
+    def get_outputs_partial(self, from_state, inputs):
+        # Retrieve the list of outputs based on a given input sequence from a certain node, stopping if an output is None
+        current_node = from_state
+        observation = []
+        for input_val in inputs:
+            if self.automaton_type == 'mealy':
+                output = current_node.get_output(input_val)
+                if output is None:
+                    break
+                current_node = current_node.get_successor(input_val)
+            else:
+                current_node = current_node.get_successor(input_val)
+                if current_node.output is None:
+                    break
+                output = current_node.output
+            observation.append(output)
+        return observation
 
     def get_size(self):
         return self.root.id_counter
@@ -342,6 +352,9 @@ class ObservationTree:
                 for frontier_state, new_basis_list in self.frontier_to_basis_dict.items():
                     if not Apartness.states_are_apart(new_basis, frontier_state, self):
                         new_basis_list.append(new_basis)
+
+                    if isinstance(new_basis, MealyGotoNode):
+                        self.goto_is_in_basis = True
                 break
 
     def check_frontier_consistency(self):
@@ -384,9 +397,6 @@ class ObservationTree:
             for inp in self.alphabet:
                 if basis_state.get_successor(inp) is None:
                     self.explore_frontier(basis_state, inp)
-                    new_frontier = basis_state.get_successor(inp)
-                    basis_candidates = self.find_basis_candidates(new_frontier)
-                    self.frontier_to_basis_dict[new_frontier] = basis_candidates
 
     def find_basis_candidates(self, new_frontier):
         return {
@@ -399,15 +409,18 @@ class ObservationTree:
 
         # Enter the access sequence
         self.sul.start_query()
-        if access_seq:
-            self.sul.steps(access_seq)
-        output = self.sul.single_step(inp)
+        access_seq.append(inp)
+        output = self.sul.steps(access_seq)[-1]
 
         frontier_state = self.extend_and_get(basis_state, inp, output)
 
+        # Find basis candidates for the new frontier state
+        basis_candidates = self.find_basis_candidates(frontier_state)
+        self.frontier_to_basis_dict[frontier_state] = basis_candidates
+
         # Conditional extensions for special outputs. Always ends in a regular frontier state, except if a state only has inferred subtree successors.
         if self.automaton_type == 'mealy':
-            frontier_state = self._try_extend_input_for_inferred(frontier_state)
+            frontier_state = self._inferred_try_extend_frontier_exploration(frontier_state)
 
         # Extension based on the extension rule
         # For ADS, check if the ADS is already contained in the tree. If not, perform adaptive query extension.
@@ -428,7 +441,7 @@ class ObservationTree:
 
         self.sul.end_query()
 
-    def _try_extend_input_for_inferred(self, current_state):
+    def _inferred_try_extend_frontier_exploration(self, current_state):
         # Extends the input after an inferred subtree node in Mealy machines
         while (isinstance(current_state, MealyRetryLeaf) or isinstance(current_state, MealyGotoNode)):
             # Select correct actual state that is represented by the inferred subtree state
@@ -441,32 +454,43 @@ class ObservationTree:
 
             # Perform a basis check for Goto states, returns early if the goto state is not a basis state (because it is just a normal frontier state then)
             if isinstance(current_state, MealyGotoNode):
-                goto_basis_states = [b for b in self.basis if isinstance(b, MealyGotoNode) and b.representing_node == actual_state.representing_node]
-                if not goto_basis_states:
+                if not self.goto_is_in_basis:
                     break
             
             # Perform the extension, returning early if no extension candidates are found
-            extension_candidates = [input for input in self.alphabet if actual_state.get_successor(input) is None]
-            if not extension_candidates:
+            extension_input = None
+            for input_val in self.alphabet:
+                if actual_state.get_successor(input_val) is None:
+                    extension_input = input_val
+                    break
+            
+            if extension_input is None:
                 # If no extension candidates are found, go to and return a random regular frontier state
-                regular_frontier_states = [s[1] for s in actual_state.successors if not s[1].has_inferred_subtree]
-                if regular_frontier_states:
-                    choice_state = random.choice(regular_frontier_states)
+                regular_frontier_candidates = []
+                for inp in actual_state.successors.keys():
+                    successor = actual_state.get_successor(inp)
+                    if not successor.has_inferred_subtree:
+                        regular_frontier_candidates.append(successor)
+                
+                if regular_frontier_candidates:
+                    choice_state = random.choice(regular_frontier_candidates)
                     self.sul.single_step(choice_state.input_to_parent)
                     return choice_state
                 else:
                     break
 
-            extension_input = extension_candidates[0]  # Choose the first available input for extension
             extension_output = self.sul.single_step(extension_input)
 
             current_state = self.extend_and_get(current_state, extension_input, extension_output)
 
+            # Find basis candidates for the new frontier state
+            basis_candidates = self.find_basis_candidates(current_state)
+            self.frontier_to_basis_dict[current_state] = basis_candidates
+
         return current_state
 
-    def _ads_contained_in_tree(self, ads, from_node):
-        # Checks whether the ADS extension sequence from a given node is fully contained in the tree
-        prev_output = None
+    def _ads_contained_in_tree(self, ads, from_node, prev_output=None):
+        # Checks whether the ADS extension sequence from a given node is contained in the tree
         current_node = from_node
         next_input = ads.next_input(prev_output)
 
@@ -512,8 +536,6 @@ class ObservationTree:
         # Query the SUL and extend the tree
         next_input = ads.next_input(last_output)
         while next_input is not None:
-            if next_input is None:
-                break
             if next_input is tuple(): # Relevant for DFA/Moore
                 if outputs_received:
                     last_output = outputs_received[-1]
@@ -524,7 +546,7 @@ class ObservationTree:
                 outputs_received.append(output)
                 last_output = output
 
-            self.extend_and_get(current_state, next_input, last_output)
+            current_state = self.extend_and_get(current_state, next_input, last_output)
             next_input = ads.next_input(last_output)
 
     def get_or_compute_witness(self, state_one, state_two):
@@ -562,11 +584,10 @@ class ObservationTree:
             return
 
         if self.separation_rule == "SepSeq" or old_candidate_size == 2:
-            inputs, outputs = self._identify_frontier_sepseq(frontier_state)
+            self._identify_frontier_sepseq(frontier_state)
         else:
-            inputs, outputs = self._identify_frontier_ads(frontier_state)
+            self._identify_frontier_ads(frontier_state)
 
-        self.insert_observation(inputs, outputs)
         self.update_basis_candidates(frontier_state)
         if len(self.frontier_to_basis_dict.get(frontier_state)) == old_candidate_size:
             raise RuntimeError("Identification did not increase the norm")
@@ -578,19 +599,23 @@ class ObservationTree:
         basis_two = basis_candidates[1]
 
         witness = self.get_or_compute_witness(basis_one, basis_two)
-        inputs = self.get_transfer_sequence(self.root, frontier_state)
+        inputs = self.get_access_sequence(frontier_state)
         inputs.extend(witness)
 
         outputs = self.sul.query(inputs)
-
-        return inputs, outputs
+        self.insert_observation(inputs, outputs)
 
     def _identify_frontier_ads(self, frontier_state):
         # Specifically identify frontier states using ADS
         basis_candidates = self.frontier_to_basis_dict.get(frontier_state)
         ads = Ads(self, basis_candidates)
         ads.reset_to_root()
-        return self.adaptive_output_query_base(self.get_transfer_sequence(self.root, frontier_state), ads)
+
+        if not self._ads_contained_in_tree(ads, frontier_state):
+            self.sul.start_query()
+            self.sul.steps(self.get_access_sequence(frontier_state))
+            self.adaptive_query_extension(ads, frontier_state)
+            self.sul.end_query()
 
     def construct_hypothesis_states(self):
         # Construct the hypothesis states from the basis
@@ -665,6 +690,27 @@ class ObservationTree:
             self.make_basis_complete()
             self.make_frontiers_identified()
             self.promote_frontier_state()
+
+    def _inferred_preparse_input_sequence(self, from_state, inputs):
+        # Preparse the input sequence to handle inferred subtree nodes in Mealy machines
+        if self.automaton_type != 'mealy':
+            return inputs
+        
+        parsed_inputs = []
+
+        outputs = self.get_outputs_partial(from_state, inputs)
+
+        for i in range(len(outputs)):
+            if outputs[i] == self.retry_output:
+                continue
+            elif outputs[i] in self.goto_outputs_map.keys():
+                parsed_inputs = self.goto_outputs_map[outputs[i]]['access_sequence']
+            else:
+                parsed_inputs.append(inputs[i])
+
+        parsed_inputs.extend(inputs[len(outputs):])
+
+        return parsed_inputs
 
     # Counterexample Processing
 
@@ -747,3 +793,4 @@ class ObservationTree:
             automaton.current_state = automaton.current_state.transitions[inp]
 
         return automaton.current_state
+

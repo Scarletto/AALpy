@@ -125,6 +125,9 @@ def run_Lsharp(alphabet: list, sul: SUL, eq_oracle: Oracle, automaton_type,
 
     if print_level > 0:
         print_learning_info(info)
+    
+    print(f'Number of inferred outputs during learning: {sul.num_inferred_outputs}')
+    print(f'Number of inferred outputs at end of queries during learning: {sul.num_inferred_outputs_end_of_query}')
 
     if return_data:
         return hypothesis, info

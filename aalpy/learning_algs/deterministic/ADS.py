@@ -29,6 +29,7 @@ class Ads:
     def __init__(self, ob_tree, current_block):
         self.initial_node = self.construct_ads(ob_tree, current_block)
         self.current_node = self.initial_node
+        self.saved_node = self.initial_node
 
     def get_score(self):
         return self.initial_node.get_score()
@@ -53,7 +54,8 @@ class Ads:
             children = {}
 
             for output, partition in empty_part.items():
-                output_score, subtree = self.compute_output_subtree(ob_tree, partition, u_i) 
+                subtree = self.construct_ads_rec(ob_tree, partition)
+                output_score = self.compute_score(len(partition), u_i, subtree.get_score())
                 score += output_score
                 children[output] = subtree
 
@@ -85,9 +87,13 @@ class Ads:
                 # Skip inferred subtrees because they do not provide additional distinguishing power.
                 # Note that placing this line here still allows nodes with inferred subtrees in 
                 # the basis (initial block) to be expanded.
-                partition = [node for node in partition if node.has_inferred_subtree is False]
+                if ob_tree.automaton_type == 'mealy':
+                    partition = [node for node in partition if not node.has_inferred_subtree]
+                    if not partition:
+                        continue
 
-                output_score, subtree = self.compute_output_subtree(ob_tree, partition, u_i) 
+                subtree = self.construct_ads_rec(ob_tree, partition)
+                output_score = self.compute_score(len(partition), u_i, subtree.get_score())
                 input_score += output_score
                 children[output] = subtree
 
@@ -108,12 +114,6 @@ class Ads:
     #     partition_size = len(partition)
     #     child_score = self.construct_ads_rec(ob_tree, partition).get_score()
     #     return self.compute_reg_score(partition_size, sub_trees, child_score)
-
-    def compute_output_subtree(self, ob_tree, partition, u_i):
-        # Computes and scores a subtree for a specific output partition
-        output_subtree = self.construct_ads_rec(ob_tree, partition)
-        output_score = self.compute_score(len(partition), u_i, output_subtree.get_score())
-        return output_score, output_subtree
 
     def compute_score(self, u_io, u_i, child_score):
         # Calculates a score based on partition size and subtree characteristics
@@ -180,3 +180,11 @@ class Ads:
     def reset_to_root(self):
         # Resets the current ADS node to the initial root node
         self.current_node = self.initial_node
+
+    def save_tree_state(self):
+        # Saves the current ADS node state
+        self.saved_node = self.current_node
+
+    def load_tree_state(self):
+        # Loads the previously saved ADS node state
+        self.current_node = self.saved_node
