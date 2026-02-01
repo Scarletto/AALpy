@@ -1,5 +1,5 @@
 from collections import defaultdict
-
+from copy import deepcopy
 
 class AdsNode:
     __slots__ = ['input', 'children', 'score']
@@ -29,7 +29,7 @@ class Ads:
     def __init__(self, ob_tree, current_block):
         self.initial_node = self.construct_ads(ob_tree, current_block)
         self.current_node = self.initial_node
-        self.saved_node = self.initial_node
+        self.node_history = []
 
     def get_score(self):
         return self.initial_node.get_score()
@@ -87,10 +87,9 @@ class Ads:
                 # Skip inferred subtrees because they do not provide additional distinguishing power.
                 # Note that placing this line here still allows nodes with inferred subtrees in 
                 # the basis (initial block) to be expanded.
-                if ob_tree.automaton_type == 'mealy':
-                    partition = [node for node in partition if not node.has_inferred_subtree]
-                    if not partition:
-                        continue
+                partition = [node for node in partition if not node.has_inferred_subtree]
+                if not partition:
+                    continue
 
                 subtree = self.construct_ads_rec(ob_tree, partition)
                 output_score = self.compute_score(len(partition), u_i, subtree.get_score())
@@ -148,6 +147,7 @@ class Ads:
 
     def next_input(self, prev_output):
         # Returns the next input based on the previous output and updates the current node
+        self.node_history.append(self.current_node)
         if prev_output is not None:
             child = self.current_node.get_child_node(prev_output)
             if child is None:
@@ -180,11 +180,10 @@ class Ads:
     def reset_to_root(self):
         # Resets the current ADS node to the initial root node
         self.current_node = self.initial_node
+        self.node_history = []
 
-    def save_tree_state(self):
-        # Saves the current ADS node state
-        self.saved_node = self.current_node
-
-    def load_tree_state(self):
-        # Loads the previously saved ADS node state
-        self.current_node = self.saved_node
+    def to_parent(self):
+        if self.node_history:
+            self.current_node = self.node_history.pop()
+        else:
+            raise RuntimeError("ADS node history is empty, cannot go to parent.")

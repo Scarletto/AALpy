@@ -1,38 +1,41 @@
-import random
-from .ADS import Ads
-from .Apartness import Apartness
-from ... import Dfa, DfaState, MealyState, MealyMachine, MooreMachine, MooreState
+AUTOMATON_TYPES = ['dfa', 'mealy', 'moore']
 
-aut_type = ['dfa', 'mealy', 'moore']
+
+# =============================================================================
+# Tree Node Classes
+# =============================================================================
 
 class MooreNode:
+    """
+    Node in the observation tree for Moore/DFA machines.
+    Output is associated with the state (node) itself.
+    """
     _id_counter = 0
-    __slots__ = ['id', 'output', 'successors', 'parent', 'input_to_parent']
+    __slots__ = ['id', 'output', 'successors', 'parent', 'input_to_parent', 'has_inferred_subtree']
 
     def __init__(self, parent=None):
         MooreNode._id_counter += 1
         self.id = MooreNode._id_counter
         self.output = None
-        self.successors = {}
+        self.successors = {}  # input -> successor node
         self.parent = parent
-        self.input_to_parent = None
+        self.input_to_parent = None  # input that led from parent to this node
+        self.has_inferred_subtree = False  # Always False for Moore/DFA (no inferred subtrees)
 
     def __hash__(self):
         return hash(self.id)
 
     def add_successor(self, input_val, output_val, successor_node):
-        """ Adds a successor node to the current node based on input """
+        """Add a successor node and set its output"""
         self.successors[input_val] = successor_node
         self.successors[input_val].output = output_val
 
     def get_successor(self, input_val):
-        """ Returns the successor node for the given input """
-        if input_val in self.successors:
-            return self.successors[input_val]
-        return None
+        """Returns the successor node for the given input, or None"""
+        return self.successors.get(input_val)
 
     def extend_and_get(self, inp, output):
-        """ Extend the node with a new successor and return the successor node """
+        """Get existing successor or create new one with given output"""
         if inp in self.successors:
             return self.successors[inp]
         successor_node = MooreNode(parent=self)
@@ -40,66 +43,78 @@ class MooreNode:
         successor_node.input_to_parent = inp
         return successor_node
 
-    @property
-    def id_counter(self):
-        return self._id_counter
-
 
 class MealyNode:
+    """
+    Node in the observation tree for Mealy machines.
+    Output is associated with transitions (edges), not states.
+    """
     _id_counter = 0
     __slots__ = ['id', 'successors', 'parent', 'input_to_parent', 'has_inferred_subtree']
 
     def __init__(self, parent=None):
         MealyNode._id_counter += 1
         self.id = MealyNode._id_counter
-        self.successors = {}
+        self.successors = {}  # input -> (output, successor node)
         self.parent = parent
         self.input_to_parent = None
-        self.has_inferred_subtree = False
+        self.has_inferred_subtree = False  # True for special leaf nodes
 
     def __hash__(self):
         return hash(self.id)
 
     def add_successor(self, input_val, output_val, successor_node):
-        """ Adds a successor node to the current node based on input """
+        """Add a successor with its associated output"""
         self.successors[input_val] = (output_val, successor_node)
 
     def get_successor(self, input_val):
-        """ Returns the successor node for the given input """
+        """Returns the successor node for the given input, or None"""
         if input_val in self.successors:
             return self.successors[input_val][1]
         return None
 
     def get_output(self, input_val):
-        """ Returns the output for the given input """
+        """Returns the output for the given input transition, or None"""
         if input_val in self.successors:
             return self.successors[input_val][0]
         return None
 
-    @property
-    def id_counter(self):
-        return self._id_counter
+
+# =============================================================================
+# Special Mealy Node Types for Inferred Subtrees
+# These handle outputs that indicate special behavior (crash, retry, goto)
+# =============================================================================
 
 class MealyCrashLeaf(MealyNode):
+    """
+    Leaf node representing a crash state - all transitions loop back to itself.
+    Once the system crashes, it stays crashed regardless of input.
+    """
     def __init__(self, parent):
         super().__init__(parent=parent)
         self.has_inferred_subtree = True
     
     def add_successor(self, input_val, output_val, successor_node):
-        pass
+        pass  # Cannot add successors to a crash state
     
     def get_successor(self, input_val):
-        return self
+        return self  # All inputs loop back
     
     def get_output(self, input_val):
-        return self.parent.get_output(self.input_to_parent)
+        return self.parent.get_output(self.input_to_parent)  # Same crash output
+
 
 class MealyRetryLeaf(MealyNode):
+    """
+    Leaf node representing a retry - transitions are delegated to parent.
+    The retry output indicates the previous input had no effect.
+    """
     def __init__(self, parent):
         super().__init__(parent=parent)
         self.has_inferred_subtree = True
     
     def add_successor(self, input_val, output_val, successor_node):
+        # Delegate to parent - retry means we're still at parent's state
         successor_node.parent = self.parent
         return self.parent.add_successor(input_val, output_val, successor_node)
     
@@ -108,22 +123,28 @@ class MealyRetryLeaf(MealyNode):
     
     def get_output(self, input_val):
         return self.parent.get_output(input_val)
+
     
 class MealyGotoNode(MealyNode):
+    """Base class for goto nodes - represents a jump to another state."""
     def __init__(self, parent, representing_node):
-        """ Node that represents a Goto inferred subtree. """
         super().__init__(parent=parent)
         self.has_inferred_subtree = True
-        self.representing_node = representing_node
+        self.representing_node = representing_node  # The actual state this represents
+
     
 class MealyGotoSourceNode(MealyGotoNode):
+    """First occurrence of a goto output - this becomes the canonical state."""
     def __init__(self, parent):
-        """ Node that represents the source of a Goto inferred subtree. """
         super().__init__(parent=parent, representing_node=self)
 
+
 class MealyGotoLeaf(MealyGotoNode):
+    """
+    Subsequent occurrences of a goto output - delegates to the source node.
+    All goto leaves with the same output share the same representing_node.
+    """
     def __init__(self, parent, representing_node):
-        """ Leaf node that represents a Goto inferred subtree. """
         super().__init__(parent=parent, representing_node=representing_node)
 
     def add_successor(self, input_val, output_val, successor_node):
@@ -136,85 +157,132 @@ class MealyGotoLeaf(MealyGotoNode):
     def get_output(self, input_val):
         return self.representing_node.get_output(input_val)
 
+
+# =============================================================================
+# Observation Tree
+# =============================================================================
+
 class ObservationTree:
-    def __init__(self, alphabet, sul, automaton_type, extension_rule, separation_rule, crash_output=None, retry_output=None, goto_outputs=[]):
+    """
+    Core observation tree for learning deterministic automata (DFA, Moore, Mealy).
+    
+    This class handles the basic tree structure for storing input/output observations.
+    It provides methods for:
+    - Extending the tree with new observations
+    - Navigating the tree (access sequences, destination nodes)
+    - Querying stored observations
+    
+    Algorithm-specific logic (like L#'s basis/frontier management) should be
+    implemented in subclasses.
+    """
+    
+    def __init__(self, alphabet, sul, automaton_type, 
+                 crash_output=None, retry_output=None, goto_outputs=[]):
         """
-        Initialize the tree with a root node and the alphabet
+        Initialize the observation tree.
+        
+        Args:
+            alphabet: Set of input symbols
+            sul: System Under Learning interface
+            automaton_type: 'dfa', 'mealy', or 'moore'
+            crash_output: (Mealy only) Output indicating system crash
+            retry_output: (Mealy only) Output indicating input had no effect
+            goto_outputs: (Mealy only) Outputs indicating jump to another state
         """
-        assert automaton_type in aut_type
+        assert automaton_type in AUTOMATON_TYPES
         assert alphabet is not None and sul is not None
         if automaton_type != 'mealy':
+            # Inferred subtrees only make sense for Mealy machines
             assert crash_output is None and retry_output is None and not goto_outputs
 
         self.automaton_type = automaton_type
         self.alphabet = alphabet
         self.sul = sul
-        self.extension_rule = extension_rule
-        self.separation_rule = separation_rule
+        
+        # Mealy-specific: special output handling
         self.crash_output = crash_output
         self.retry_output = retry_output
         self.goto_outputs_map = {output: None for output in goto_outputs}
-        self.goto_is_in_basis = False
 
+        # Initialize root node
         if self.automaton_type == 'mealy':
             self.root = MealyNode()
         else:
             self.root = MooreNode()
-            # initialize MooreNode with empty word output
+            # For Moore/DFA, query empty word to get initial state output
             self.root.output = self.sul.query([])[0]
 
-        self.basis = []
-        self.basis.append(self.root)
-        self.frontier_to_basis_dict = {}
-
-        # Caches the separating sequences between basis states
-        self.witness_cache = {}
-        # Maps the basis states to hypothesis states
-        self.states_dict = dict()
+    # =========================================================================
+    # Tree Extension and Node Access
+    # =========================================================================
 
     def extend_and_get(self, node, input, output):
-        """ Extend the node with a new successor and return the successor node """
+        """Extend the tree with a new observation or return existing node"""
         if self.automaton_type == 'mealy':
-            return self.extend_and_get_mealy(node, input, output)
+            return self._extend_and_get_mealy(node, input, output)
         else:
             return node.extend_and_get(input, output)
     
-    def extend_and_get_mealy(self, node, input, output):
-        """ Extend the node with a new successor and return the successor node """
+    def _extend_and_get_mealy(self, node, input, output):
+        """
+        Extend a Mealy node with a new transition, handling special outputs.
+        
+        Special outputs create inferred subtree nodes:
+        - crash_output -> MealyCrashLeaf (absorbing state)
+        - retry_output -> MealyRetryLeaf (no state change)
+        - goto_output -> MealyGotoSourceNode/MealyGotoLeaf (jump to shared state)
+        """
         assert self.automaton_type == 'mealy'
 
-        if input in node.successors.keys():
-            out = node.get_output(input)
-            if out != output:
+        # Check if transition already exists
+        if input in node.successors:
+            existing_output = node.get_output(input)
+            if existing_output != output:
                 raise Exception(
-                    f"observation not consistent with tree with output from tree: {out} and output from call: {output}")
+                    f"Inconsistent observation: tree has output '{existing_output}', "
+                    f"but received '{output}'")
             return node.get_successor(input)
    
+        # Create appropriate successor node based on output type
         if output == self.crash_output:
             successor_node = MealyCrashLeaf(parent=node)
+            
         elif output == self.retry_output:
             successor_node = MealyRetryLeaf(parent=node)
-        elif output in self.goto_outputs_map.keys() and self.goto_outputs_map[output] is None:
-            successor_node = MealyGotoSourceNode(parent=node)
-            acc_seq = self.get_access_sequence(node)
-            acc_seq.append(input)
-            self.goto_outputs_map[output] = {'node': successor_node, 'access_sequence': acc_seq}
-        elif output in self.goto_outputs_map.keys() and self.goto_outputs_map[output] is not None:
-            successor_node = MealyGotoLeaf(parent=node, representing_node=self.goto_outputs_map[output]['node'])
-            acc_seq = self.get_access_sequence(node)
-            acc_seq.append(input)
-            if len(self.goto_outputs_map[output]['access_sequence']) > len(acc_seq):
-
-                self.goto_outputs_map[output]['access_sequence'] = acc_seq
+            
+        elif output in self.goto_outputs_map:
+            if self.goto_outputs_map[output] is None:
+                # First occurrence of this goto output - create source node
+                successor_node = MealyGotoSourceNode(parent=node)
+                acc_seq = self.get_access_sequence(node) + [input]
+                self.goto_outputs_map[output] = {
+                    'node': successor_node, 
+                    'access_sequence': acc_seq
+                }
+            else:
+                # Subsequent occurrence - create leaf pointing to source
+                successor_node = MealyGotoLeaf(
+                    parent=node, 
+                    representing_node=self.goto_outputs_map[output]['node']
+                )
+                # Update access sequence if this path is shorter
+                acc_seq = self.get_access_sequence(node) + [input]
+                if len(self.goto_outputs_map[output]['access_sequence']) > len(acc_seq):
+                    self.goto_outputs_map[output]['access_sequence'] = acc_seq
         else:
+            # Regular transition
             successor_node = MealyNode(parent=node)
 
         node.add_successor(input, output, successor_node)
         successor_node.input_to_parent = input
         return successor_node
 
+    # =========================================================================
+    # Tree Observation and Query Methods
+    # =========================================================================
+
     def insert_observation(self, inputs, outputs):
-        # Insert an observation into the tree using sequences of inputs and outputs
+        """Insert an input/output sequence into the tree"""
         if len(inputs) != len(outputs):
             raise ValueError("Inputs and outputs must have the same length.")
 
@@ -223,7 +291,7 @@ class ObservationTree:
             current_node = self.extend_and_get(current_node, input_val, output_val)
 
     def get_observation(self, inputs):
-        # Retrieve the list of outputs based on a given input sequence
+        """Retrieve the list of outputs based on a given input sequence"""
         current_node = self.root
         observation = []
         for input_val in inputs:
@@ -238,27 +306,20 @@ class ObservationTree:
             observation.append(output)
         return observation
 
-    # SEEMS TO BE UNUSED
-    # def get_outputs(self, basis_state, inputs):
-    #     # Retrieve the list of outputs based on a basis state and a given input sequence
-    #     prefix = self.get_transfer_sequence(self.root, basis_state)
-    #     current_node = self.get_successor(prefix)
-    #     observation = []
-    #     for input_val in inputs:
-    #         if self.automaton_type == 'mealy':
-    #             output = current_node.get_output(input_val)
-    #         else:
-    #             output = current_node.output
-    #         if output is None:
-    #             return None
-    #         observation.append(output)
-    #         current_node = current_node.get_successor(input_val)
-
-    #     return observation
-
     def get_destination_node(self, inputs):
-        # Retrieve the node (subtree) corresponding to the given input sequence
+        """Retrieve the node corresponding to the given input sequence from root"""
         current_node = self.root
+        for input_val in inputs:
+            successor_node = current_node.get_successor(input_val)
+            if successor_node is None:
+                return None
+            current_node = successor_node
+
+        return current_node
+    
+    def get_destination_node_from(self, from_node, inputs):
+        """Retrieve the node corresponding to the given input sequence from a specific node"""
+        current_node = from_node
         for input_val in inputs:
             successor_node = current_node.get_successor(input_val)
             if successor_node is None:
@@ -268,7 +329,7 @@ class ObservationTree:
         return current_node
 
     def get_transfer_sequence(self, from_node, to_node):
-        # Get the transfer sequence (inputs) that moves from one node to another
+        """Get the input sequence that moves from one node to another"""
         transfer_sequence = []
         current_node = to_node
 
@@ -282,11 +343,14 @@ class ObservationTree:
         return transfer_sequence
 
     def get_access_sequence(self, to_node):
-        # Get the access sequence (inputs) to reach a specific node from the root
+        """Get the input sequence to reach a specific node from the root"""
         return self.get_transfer_sequence(self.root, to_node)
     
     def get_outputs_partial(self, from_state, inputs):
-        # Retrieve the list of outputs based on a given input sequence from a certain node, stopping if an output is None
+        """
+        Retrieve outputs for an input sequence, stopping early if undefined.
+        Returns the longest prefix of outputs that are defined in the tree.
+        """
         current_node = from_state
         observation = []
         for input_val in inputs:
@@ -297,500 +361,121 @@ class ObservationTree:
                 current_node = current_node.get_successor(input_val)
             else:
                 current_node = current_node.get_successor(input_val)
-                if current_node.output is None:
+                if current_node is None or current_node.output is None:
                     break
                 output = current_node.output
             observation.append(output)
         return observation
 
-    def get_size(self):
-        return self.root.id_counter
+    def get_tree_size(self):
+        """Returns the total number of nodes created (for debugging/metrics)"""
+        if isinstance(self.root, MealyNode):
+            return MealyNode._id_counter
+        else:
+            return MooreNode._id_counter
 
-    # Functions related to finding new basis and frontier states
-    def update_frontier_and_basis(self):
-        # Updates the frontier to basis map, promotes a frontier state and checks for consistency
-        self.update_frontier_to_basis_dict()
-        self.promote_frontier_state()
-        self.check_frontier_consistency()
-        self.update_frontier_to_basis_dict()
+    # =========================================================================
+    # Mealy-Specific: Inferred Subtree Handling
+    # =========================================================================
+    #
+    # For Mealy machines, certain outputs indicate special state behavior:
+    # - crash_output: System crashed, all future inputs return crash
+    # - retry_output: Input had no effect, state unchanged
+    # - goto_outputs: State jumped to a specific "goto" state
+    #
+    # These create "inferred subtrees" - parts of the tree we don't need to
+    # explore because their behavior is deterministically known from the output.
+    # =========================================================================
 
-    def update_basis_candidates(self, frontier_state):
+    def nodes_represent_same_state_through_inferred(self, first, second):
         """
-        Updates the basis candidates for the specified frontier state.
-        Removes basis states that are deemed apart from the frontier state.
+        Check if two subtree nodes represent the same actual state through inferred subtrees.
+        
+        Two sink nodes: they always represent the same state.
+        Two retry nodes: they represent the same state if their parent is the same.
+        Retry node, other node: they represent the same state if the retry's parent is the other node.
+        Two goto nodes: they represent the same state if their representing_node is the same.
         """
-        if frontier_state not in self.frontier_to_basis_dict:
-            print(
-                f"Warning: {frontier_state} not found in frontier_to_basis_dict.")
-            return
-
-        basis_list = self.frontier_to_basis_dict[frontier_state]
-        self.frontier_to_basis_dict[frontier_state] = [basis_state for basis_state in basis_list
-                                                       if not Apartness.states_are_apart(frontier_state, basis_state, self)]
-
-    def update_frontier_to_basis_dict(self):
-        """
-        Checks for basis candidates (basis states with the same behavior) for each frontier state.
-        If a frontier state and a basis state are "apart", the basis state is removed from the basis list.
-        """
-
-        for frontier_state, basis_list in self.frontier_to_basis_dict.items():
-            self.frontier_to_basis_dict[frontier_state] = [
-                basis_state for basis_state in basis_list
-                if not Apartness.states_are_apart(frontier_state, basis_state, self)]
-
-    def promote_frontier_state(self):
-        """
-        Searches for an isolated frontier state and adds it to the basis states if it is not associated with another basis state
-        """
-        for iso_frontier_state, basis_list in self.frontier_to_basis_dict.items():
-            if not basis_list:
-                new_basis = iso_frontier_state
-                self.basis.append(new_basis)
-                self.frontier_to_basis_dict.pop(new_basis)
-
-                for frontier_state, new_basis_list in self.frontier_to_basis_dict.items():
-                    if not Apartness.states_are_apart(new_basis, frontier_state, self):
-                        new_basis_list.append(new_basis)
-
-                    if isinstance(new_basis, MealyGotoNode):
-                        self.goto_is_in_basis = True
-                break
-
-    def check_frontier_consistency(self):
-        """
-        Checks if all the states are correctly defined and creates new frontier states when possible 
-        """
-        for basis_state in self.basis:
-            for i in self.alphabet:
-                maybe_frontier = basis_state.get_successor(i)
-                if maybe_frontier is None or maybe_frontier in self.basis or maybe_frontier in self.frontier_to_basis_dict:
-                    continue
-
-                self.frontier_to_basis_dict[maybe_frontier] = [
-                    new_basis_state for new_basis_state in self.basis
-                    if not Apartness.states_are_apart(new_basis_state, maybe_frontier, self)
-                ]
-
-    def is_observation_tree_adequate(self):
-        # Check if the frontier state have only 1 basis candidate, and if all basis
-        # states have some output for every input.
-        self.check_frontier_consistency()
-        for _, basis_list in self.frontier_to_basis_dict.items():
-            if len(basis_list) != 1:
+        match (first, second):
+            case (MealyCrashLeaf(), MealyCrashLeaf()):
+                return True
+            
+            case (MealyRetryLeaf(), MealyRetryLeaf()):
+                return first.parent == second.parent
+            case (MealyRetryLeaf(), _):
+                return first.parent == second
+            
+            case (MealyGotoNode(), MealyGotoNode()):
+                return first.representing_node == second.representing_node
+            
+            case _:
                 return False
 
-        for basis_state in self.basis:
-            for inp in self.alphabet:
-                if self.automaton_type == 'mealy':
-                    if basis_state.get_output(inp) is None:
-                        return False
-                else:
-                    if basis_state.get_successor(inp) is None:
-                        return False
 
-        return True
-    
-    def make_basis_complete(self):
-        # Explore new frontier states and adding them to the frontier to basis map
-        for basis_state in self.basis:
-            for inp in self.alphabet:
-                if basis_state.get_successor(inp) is None:
-                    self.explore_frontier(basis_state, inp)
-
-    def find_basis_candidates(self, new_frontier):
-        return {
-            new_basis_state for new_basis_state in self.basis
-            if not Apartness.states_are_apart(new_basis_state, new_frontier, self)
-        }
-
-    def explore_frontier(self, basis_state, inp):
-        access_seq = self.get_access_sequence(basis_state)
-
-        # Enter the access sequence
-        self.sul.start_query()
-        access_seq.append(inp)
-        output = self.sul.steps(access_seq)[-1]
-
-        frontier_state = self.extend_and_get(basis_state, inp, output)
-
-        # Find basis candidates for the new frontier state
-        basis_candidates = self.find_basis_candidates(frontier_state)
-        self.frontier_to_basis_dict[frontier_state] = basis_candidates
-
-        # Conditional extensions for special outputs. Always ends in a regular frontier state, except if a state only has inferred subtree successors.
-        if self.automaton_type == 'mealy':
-            frontier_state = self._inferred_try_extend_frontier_exploration(frontier_state)
-
-        # Extension based on the extension rule
-        # For ADS, check if the ADS is already contained in the tree. If not, perform adaptive query extension.
-        if self.extension_rule == "ADS":
-            ads = Ads(self, self.basis)
-            if not self._ads_contained_in_tree(ads, frontier_state):
-                ads.reset_to_root()
-                self.adaptive_query_extension(ads, frontier_state)
-        elif self.extension_rule == "SepSeq" and len(self.basis) > 1:
-            iterator = iter(self.basis)
-            basis_two = next(iterator)
-            if basis_two == basis_state:
-                basis_two = next(iterator)
-            witness = self.get_or_compute_witness(basis_state, basis_two)
-            for witness_input in witness:
-                output = self.sul.single_step(witness_input)
-                frontier_state = self.extend_and_get(frontier_state, witness_input, output)
-
-        self.sul.end_query()
-
-    def _inferred_try_extend_frontier_exploration(self, current_state):
-        # Extends the input after an inferred subtree node in Mealy machines
-        while (isinstance(current_state, MealyRetryLeaf) or isinstance(current_state, MealyGotoNode)):
-            # Select correct actual state that is represented by the inferred subtree state
-            if isinstance(current_state, MealyGotoLeaf):
-                actual_state = current_state.representing_node
-            elif isinstance(current_state, MealyGotoNode):
-                actual_state = current_state
-            else:
-                actual_state = current_state.parent
-
-            # Perform a basis check for Goto states, returns early if the goto state is not a basis state (because it is just a normal frontier state then)
-            if isinstance(current_state, MealyGotoNode):
-                if not self.goto_is_in_basis:
-                    break
-            
-            # Perform the extension, returning early if no extension candidates are found
-            extension_input = None
-            for input_val in self.alphabet:
-                if actual_state.get_successor(input_val) is None:
-                    extension_input = input_val
-                    break
-            
-            if extension_input is None:
-                # If no extension candidates are found, go to and return a random regular frontier state
-                regular_frontier_candidates = []
-                for inp in actual_state.successors.keys():
-                    successor = actual_state.get_successor(inp)
-                    if not successor.has_inferred_subtree:
-                        regular_frontier_candidates.append(successor)
-                
-                if regular_frontier_candidates:
-                    choice_state = random.choice(regular_frontier_candidates)
-                    self.sul.single_step(choice_state.input_to_parent)
-                    return choice_state
-                else:
-                    break
-
-            extension_output = self.sul.single_step(extension_input)
-
-            current_state = self.extend_and_get(current_state, extension_input, extension_output)
-
-            # Find basis candidates for the new frontier state
-            basis_candidates = self.find_basis_candidates(current_state)
-            self.frontier_to_basis_dict[current_state] = basis_candidates
-
-        return current_state
-
-    def _ads_contained_in_tree(self, ads, from_node, prev_output=None):
-        # Checks whether the ADS extension sequence from a given node is contained in the tree
-        current_node = from_node
-        next_input = ads.next_input(prev_output)
-
-        while next_input is not None:
-            if self.automaton_type == 'mealy':
-                output_from_node = current_node.get_output(next_input)
-                successor_from_node = current_node.get_successor(next_input)
-                if successor_from_node is None:
-                    return False
-            else:
-                successor_from_node = current_node.get_successor(next_input)
-                if successor_from_node is None:
-                    return False
-                output_from_node = successor_from_node.output
-
-            prev_output = output_from_node
-            current_node = successor_from_node
-
-            next_input = ads.next_input(prev_output)
-
-        return True
-    
-    def adaptive_query_extension(self, ads, from_node):
+    def _inferred_preparse_access_sequence(self, inputs):
         """
-
-        Performs an adaptive output query extension on the SUL. The ADS is a tree like object, the next input depends on the previous input-output pairs.
-        Each input is executed using the single_step method. Currently only implemented for Mealy machines
-
+        Preprocess input sequence to handle inferred subtree nodes.
+        
+        When building an access sequence to query the SUL, we need to account
+        for special outputs that change the effective path:
+        
+        - Retry outputs: Skip these inputs entirely since they didn't change state.
+          The SUL is still in the same state as before the retry input.
+          
+        - Goto outputs: Replace the path so far with the canonical goto state's
+          access sequence. All goto outputs for the same target lead to the
+          same state, so we use the shortest known path.
+        
         Args:
-
-            source_state: the state from which the query starts
-
-            ads: adaptive distinguishing suffix
-
+            inputs: Original input sequence (access sequence + extension)
+            
         Returns:
-
-            list of outputs, where the i-th output corresponds to the output of the system after the i-th input
+            Preprocessed input sequence suitable for SUL queries
         """
-        outputs_received = []
-        last_output = None
-        current_state = from_node
-
-        # Query the SUL and extend the tree
-        next_input = ads.next_input(last_output)
-        while next_input is not None:
-            if next_input is tuple(): # Relevant for DFA/Moore
-                if outputs_received:
-                    last_output = outputs_received[-1]
-                else:
-                    last_output = self.sul.single_step(None)
-            else:
-                output = self.sul.single_step(next_input)
-                outputs_received.append(output)
-                last_output = output
-
-            current_state = self.extend_and_get(current_state, next_input, last_output)
-            next_input = ads.next_input(last_output)
-
-    def get_or_compute_witness(self, state_one, state_two):
-        """
-        Get witness by checking cache and computing it otherwise.
-        Only add pairs (a,b) with a < b.
-        """
-        if state_one.id < state_two.id:
-            pair = (state_one.id, state_two.id)
-        else:
-            pair = (state_two.id, state_one.id)
-
-        if pair in self.witness_cache:
-            return self.witness_cache.get(pair)
-
-        witness = Apartness.compute_witness(state_one, state_two, self)
-        self.witness_cache[pair] = witness
-        return witness
-
-    def make_frontiers_identified(self):
-        # Loop over all frontier states to identify them
-        for frontier_state in self.frontier_to_basis_dict:
-            self.identify_frontier(frontier_state)
-
-    def identify_frontier(self, frontier_state):
-        # Identify a specific frontier state
-        if frontier_state not in self.frontier_to_basis_dict:
-            raise Exception(
-                f"Warning: {frontier_state} not found in frontier_to_basis_dict.")
-
-        self.update_basis_candidates(frontier_state)
-        old_candidate_size = len(
-            self.frontier_to_basis_dict.get(frontier_state))
-        if old_candidate_size < 2:
-            return
-
-        if self.separation_rule == "SepSeq" or old_candidate_size == 2:
-            self._identify_frontier_sepseq(frontier_state)
-        else:
-            self._identify_frontier_ads(frontier_state)
-
-        self.update_basis_candidates(frontier_state)
-        if len(self.frontier_to_basis_dict.get(frontier_state)) == old_candidate_size:
-            raise RuntimeError("Identification did not increase the norm")
-
-    def _identify_frontier_sepseq(self, frontier_state):
-        # Specifically identify frontier states using separating sequences
-        basis_candidates = self.frontier_to_basis_dict.get(frontier_state)
-        basis_one = basis_candidates[0]
-        basis_two = basis_candidates[1]
-
-        witness = self.get_or_compute_witness(basis_one, basis_two)
-        inputs = self.get_access_sequence(frontier_state)
-        inputs.extend(witness)
-
-        outputs = self.sul.query(inputs)
-        self.insert_observation(inputs, outputs)
-
-    def _identify_frontier_ads(self, frontier_state):
-        # Specifically identify frontier states using ADS
-        basis_candidates = self.frontier_to_basis_dict.get(frontier_state)
-        ads = Ads(self, basis_candidates)
-        ads.reset_to_root()
-
-        if not self._ads_contained_in_tree(ads, frontier_state):
-            self.sul.start_query()
-            self.sul.steps(self.get_access_sequence(frontier_state))
-            self.adaptive_query_extension(ads, frontier_state)
-            self.sul.end_query()
-
-    def construct_hypothesis_states(self):
-        # Construct the hypothesis states from the basis
-        self.states_dict = dict()
-        state_counter = 0
-
-        for basis_state in self.basis:
-            state_id = f's{state_counter}'
-            if self.automaton_type == 'dfa':
-                self.states_dict[basis_state] = DfaState(state_id)
-                self.states_dict[basis_state].is_accepting = basis_state.output
-            elif self.automaton_type == 'moore':
-                self.states_dict[basis_state] = MooreState(
-                    state_id, output=basis_state.output)
-            else:
-                self.states_dict[basis_state] = MealyState(state_id)
-            state_counter += 1
-
-    def construct_hypothesis_transitions(self):
-        # Construct the hypothesis transitions from the basis, frontier and basis to frontier mapping
-        for basis_state in self.basis:
-            for input_val in self.alphabet:
-                # set transition
-                successor = basis_state.get_successor(input_val)
-                if successor in self.frontier_to_basis_dict:
-                    # set successor for frontier state
-                    candidates = self.frontier_to_basis_dict[successor]
-                    if len(candidates) > 1:
-                        raise RuntimeError(
-                            "Multiple basis candidates for a single frontier state.")
-                    successor = next(iter(candidates))
-                if successor not in self.states_dict:
-                    raise RuntimeError(
-                        "Successor is not in the basisToStateMap.")
-
-                destination = self.states_dict[successor]
-                self.states_dict[basis_state].transitions[input_val] = destination
-                if self.automaton_type == 'mealy':
-                    self.states_dict[basis_state].output_fun[input_val] = basis_state.get_output(
-                        input_val)
-
-    def construct_hypothesis(self):
-        # Construct a hypothesis (Mealy Machine) based on the observation tree
-        self.construct_hypothesis_states()
-        self.construct_hypothesis_transitions()
-
-        automaton_class = {'dfa': Dfa, 'mealy': MealyMachine, 'moore': MooreMachine}
-        hypothesis = automaton_class[self.automaton_type](
-            self.states_dict[self.root], list(self.states_dict.values()))
-        hypothesis.compute_prefixes()
-        hypothesis.characterization_set = hypothesis.compute_characterization_set(raise_warning=False)
-
-        return hypothesis
-
-    def build_hypothesis(self):
-        # Builds the hypothesis which will be sent to the SUL and checks consistency
-        while True:
-            self.make_observation_tree_adequate()
-            hypothesis = self.construct_hypothesis()
-            counter_example = Apartness.compute_witness_in_tree_and_hypothesis_states(self, self.root, hypothesis.initial_state)
-
-            if not counter_example:
-                return hypothesis
-
-            cex_outputs = self.get_observation(counter_example)
-            self.process_counter_example(hypothesis, counter_example, cex_outputs)
-
-    def make_observation_tree_adequate(self):
-        # Updates the frontier and basis based on extension and separation rule
-        self.update_frontier_and_basis()
-        while not self.is_observation_tree_adequate():
-            self.make_basis_complete()
-            self.make_frontiers_identified()
-            self.promote_frontier_state()
-
-    def _inferred_preparse_input_sequence(self, from_state, inputs):
-        # Preparse the input sequence to handle inferred subtree nodes in Mealy machines
         if self.automaton_type != 'mealy':
             return inputs
         
         parsed_inputs = []
-
-        outputs = self.get_outputs_partial(from_state, inputs)
+        
+        # Get outputs for all but the last two inputs (the extension part)
+        # We only preparse the "known" part of the sequence
+        outputs = self.get_outputs_partial(self.root, inputs[:-2])
 
         for i in range(len(outputs)):
             if outputs[i] == self.retry_output:
+                # Skip retry - it didn't change state, so skip this input
                 continue
-            elif outputs[i] in self.goto_outputs_map.keys():
+            elif outputs[i] in self.goto_outputs_map:
+                # Redirect: replace everything so far with goto target's access sequence
                 parsed_inputs = self.goto_outputs_map[outputs[i]]['access_sequence']
             else:
+                # Normal output - keep the input
                 parsed_inputs.append(inputs[i])
 
+        # Append the remaining inputs (extension part that wasn't preparsed)
         parsed_inputs.extend(inputs[len(outputs):])
 
         return parsed_inputs
 
-    # Counterexample Processing
-
-    def process_counter_example(self, hypothesis, cex_inputs, cex_outputs):
+    def _get_actual_state_for_inferred(self, inferred_state):
         """
-        Inserts the counter example into the observation tree and searches for the
-        input-output sequence which is different
+        Get the actual tree node that an inferred subtree node represents.
+        
+        For retry nodes: the parent (since retry means no state change)
+        For goto leaves: the representing_node (the canonical goto target)
+        For goto source: itself (it is the canonical target)
         """
-        self.insert_observation(cex_inputs, cex_outputs)
-        hyp_outputs = hypothesis.compute_output_seq(
-            hypothesis.initial_state, cex_inputs)
-        prefix_index = self._get_counter_example_prefix_index(
-            cex_outputs, hyp_outputs)
-        self._process_binary_search(
-            hypothesis, cex_inputs[:prefix_index], cex_outputs[:prefix_index])
+        if isinstance(inferred_state, MealyGotoLeaf):
+            return inferred_state.representing_node
+        elif isinstance(inferred_state, MealyGotoNode):
+            return inferred_state
+        else:  # MealyRetryLeaf
+            return inferred_state.parent
 
-    def _get_counter_example_prefix_index(self, cex_outputs, hyp_outputs):
-        """ Checks at which index the output functions differ """
-        for index in range(len(cex_outputs)):
-            if cex_outputs[index] != hyp_outputs[index]:
-                return index
-        raise RuntimeError("counterexample and hypothesis outputs are equal")
-
-    def _process_binary_search(self, hypothesis, cex_inputs, cex_outputs):
-        """
-        use binary search on the counter example to compute a witness between the real system and the hypothesis
-        """
-        tree_node = self.get_destination_node(cex_inputs)
-        self.update_frontier_and_basis()
-
-        if tree_node in self.frontier_to_basis_dict or tree_node in self.basis:
-            return
-
-        hyp_state = self._get_automaton_successor(
-            hypothesis, hypothesis.initial_state, cex_inputs)
-        hyp_node = list(self.states_dict.keys())[list(
-            self.states_dict.values()).index(hyp_state)]
-
-        prefix = []
-        current_state = self.root
-        for input in cex_inputs:
-            if current_state in self.frontier_to_basis_dict:
-                break
-            current_state = current_state.get_successor(input)
-            prefix.append(input)
-
-        h = (len(prefix) + len(cex_inputs)) // 2
-        sigma1 = list(cex_inputs[:h])
-        sigma2 = list(cex_inputs[h:])
-
-        hyp_state_p = self._get_automaton_successor(
-            hypothesis, hypothesis.initial_state, sigma1)
-        hyp_node_p = list(self.states_dict.keys())[list(
-            self.states_dict.values()).index(hyp_state_p)]
-        hyp_p_access = self.get_transfer_sequence(self.root, hyp_node_p)
-
-        witness = Apartness.compute_witness(tree_node, hyp_node, self)
-        if witness is None:
-            raise RuntimeError("Binary search: There should be a witness")
-
-        query_inputs = hyp_p_access + sigma2 + witness
-        query_outputs = self.sul.query(query_inputs)
-
-        self.insert_observation(query_inputs, query_outputs)
-
-        tree_node_p = self.get_destination_node(sigma1)
-
-        witness_p = Apartness.compute_witness(tree_node_p, hyp_node_p, self)
-
-        if witness_p is not None:
-            self._process_binary_search(hypothesis, sigma1, cex_outputs[:h])
-        else:
-            new_inputs = list(hyp_p_access) + sigma2
-            self._process_binary_search(
-                hypothesis, new_inputs, query_outputs[:len(new_inputs)])
-
-    def _get_automaton_successor(self, automaton, from_state, inputs):
-        automaton.current_state = from_state
-        for inp in inputs:
-            automaton.current_state = automaton.current_state.transitions[inp]
-
-        return automaton.current_state
+    def _find_unexplored_input(self, state):
+        """Find the first input that hasn't been explored from this state"""
+        for input_val in self.alphabet:
+            if state.get_successor(input_val) is None:
+                return input_val
+        return None
 

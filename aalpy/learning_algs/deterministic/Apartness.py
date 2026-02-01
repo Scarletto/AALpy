@@ -1,4 +1,4 @@
-from collections import deque
+from collections import defaultdict, deque
 
 class Apartness:
     @staticmethod
@@ -42,7 +42,7 @@ class Apartness:
                     second_successor = second_node.get_successor(input_val)
 
                     # If inputs are equal and successors have inferred subtrees, skip further exploration because they cannot provide distinguishing information
-                    if first_successor.has_inferred_subtree and second_successor.has_inferred_subtree:
+                    if first_successor.has_inferred_subtree or second_successor.has_inferred_subtree:
                         continue
 
                     pairs.append((first_successor, second_successor))
@@ -82,7 +82,7 @@ class Apartness:
     def compute_witness_in_tree_and_hypothesis_states_mealy(ob_tree, ob_tree_state, hyp_state):
         """
         Determines if the observation tree and the hypothesis are distinguishable based on their state outputs
-        """
+        """        
         pairs = deque([(ob_tree_state, hyp_state)])
 
         while pairs:

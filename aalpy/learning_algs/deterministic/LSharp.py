@@ -1,15 +1,17 @@
 import time
+import os
 
 from aalpy.base import Oracle, SUL
+from aalpy.learning_algs.deterministic.Apartness import Apartness
 from aalpy.utils.HelperFunctions import print_learning_info
-from .ObservationTree import ObservationTree
+from .LSharpLearner import LSharpLearner
 from ...base.SUL import CacheSUL
 
 
 def run_Lsharp(alphabet: list, sul: SUL, eq_oracle: Oracle, automaton_type,
                extension_rule='SepSeq', separation_rule="ADS", samples=None,
                crash_output = None, retry_output = None, goto_outputs: list = [],
-               max_learning_rounds=None, cache_and_non_det_check=True, return_data=False, print_level=2):
+               max_learning_rounds=None, cache_and_non_det_check=True, return_data=False, print_level=2, write_dot_files=False):
     """
     Based on ''A New Approach for Active Automata Learning Based on Apartness'' from Vaandrager, Garhewal, Rot and Wissmann. 
     and ''L# for DFAs'' from Vaandrager, Sanders.
@@ -71,7 +73,7 @@ def run_Lsharp(alphabet: list, sul: SUL, eq_oracle: Oracle, automaton_type,
             for input_seq, output_seq in samples:
                 sul.cache.add_to_cache(input_seq, output_seq)
 
-    ob_tree = ObservationTree(alphabet, sul, automaton_type, extension_rule, separation_rule, crash_output, retry_output, goto_outputs)
+    learner = LSharpLearner(alphabet, sul, automaton_type, extension_rule, separation_rule, crash_output, retry_output, goto_outputs)
     start_time = time.time()
 
     eq_query_time = 0
@@ -84,7 +86,13 @@ def run_Lsharp(alphabet: list, sul: SUL, eq_oracle: Oracle, automaton_type,
             break
 
         # Building the hypothesis
-        hypothesis = ob_tree.build_hypothesis()
+        hypothesis = learner.build_hypothesis()
+        
+        if write_dot_files:
+            # Save hypothesis to .dot file in RUN directory
+            hypothesis_path = os.path.join('RUN', f'hypothesis{learning_rounds}')
+            os.makedirs('RUN', exist_ok=True)
+            hypothesis.save(file_path=hypothesis_path, file_type='dot')
 
         if print_level > 1:
             print(f'Hypothesis {learning_rounds}: {hypothesis.size} states.')
@@ -104,7 +112,7 @@ def run_Lsharp(alphabet: list, sul: SUL, eq_oracle: Oracle, automaton_type,
 
         # Process the counterexample and start a new learning round
         cex_outputs = sul.query(cex)
-        ob_tree.process_counter_example(hypothesis, cex, cex_outputs)
+        learner.process_counter_example(hypothesis, cex, cex_outputs)
 
     total_time = round(time.time() - start_time, 2)
     eq_query_time = round(eq_query_time, 2)
