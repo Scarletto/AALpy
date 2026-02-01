@@ -63,7 +63,9 @@ class Ads:
 
     def construct_ads_rec(self, ob_tree, current_block):
         # Builds the ADS tree recursively by selecting optimal inputs for splitting states
-        if len(current_block) == 1:
+        current_block = [node for node in current_block if not node.has_inferred_subtree]
+
+        if len(current_block) <= 1:
             return AdsNode.create_leaf()
 
         # If none of the nodes in the current block have a successor, we cannot decide a next input
@@ -87,10 +89,6 @@ class Ads:
                 # Skip inferred subtrees because they do not provide additional distinguishing power.
                 # Note that placing this line here still allows nodes with inferred subtrees in 
                 # the basis (initial block) to be expanded.
-                partition = [node for node in partition if not node.has_inferred_subtree]
-                if not partition:
-                    continue
-
                 subtree = self.construct_ads_rec(ob_tree, partition)
                 output_score = self.compute_score(len(partition), u_i, subtree.get_score())
                 input_score += output_score
