@@ -447,7 +447,8 @@ class ObservationTree:
                 continue
             elif outputs[i] in self.goto_outputs_map:
                 # Redirect: replace everything so far with goto target's access sequence
-                parsed_inputs = self.goto_outputs_map[outputs[i]]['access_sequence']
+                parsed_inputs.clear()
+                parsed_inputs.extend(self.goto_outputs_map[outputs[i]]['access_sequence'])
             else:
                 # Normal output - keep the input
                 parsed_inputs.append(inputs[i])

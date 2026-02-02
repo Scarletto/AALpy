@@ -485,7 +485,8 @@ class LSharpLearner:
 
         # Query the frontier state with the witness between two candidates
         witness = self.get_or_compute_witness(basis_one, basis_two)
-        inputs = self.tree.get_access_sequence(frontier_state) + witness
+        inputs = self.tree.get_access_sequence(frontier_state)
+        inputs.extend(witness)
         inputs = self.tree._inferred_preparse_access_sequence(inputs)
 
         outputs = self.sul.query(inputs)
