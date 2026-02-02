@@ -1,5 +1,4 @@
 from collections import defaultdict
-from copy import deepcopy
 
 class AdsNode:
     __slots__ = ['input', 'children', 'score']
@@ -63,9 +62,8 @@ class Ads:
 
     def construct_ads_rec(self, ob_tree, current_block):
         # Builds the ADS tree recursively by selecting optimal inputs for splitting states
-        current_block = [node for node in current_block if not node.has_inferred_subtree]
-
-        if len(current_block) <= 1:
+        # Base case: all nodes have inferred subtrees or only one node in block. Then, no more distinguishing information
+        if len(current_block) == 1 or all(node.has_inferred_subtree for node in current_block):
             return AdsNode.create_leaf()
 
         # If none of the nodes in the current block have a successor, we cannot decide a next input
@@ -81,14 +79,12 @@ class Ads:
 
         for input_val in ob_tree.alphabet:
             input_partitions = self.partition_on_output(current_block, input_val, ob_tree.automaton_type)
+
             u_i = sum(len(part) for part in input_partitions.values())
             input_score = 0
             children = {}
 
             for output, partition in input_partitions.items():
-                # Skip inferred subtrees because they do not provide additional distinguishing power.
-                # Note that placing this line here still allows nodes with inferred subtrees in 
-                # the basis (initial block) to be expanded.
                 subtree = self.construct_ads_rec(ob_tree, partition)
                 output_score = self.compute_score(len(partition), u_i, subtree.get_score())
                 input_score += output_score
