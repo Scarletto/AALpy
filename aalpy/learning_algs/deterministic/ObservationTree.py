@@ -437,9 +437,9 @@ class ObservationTree:
         
         parsed_inputs = []
         
-        # Get outputs for all but the last two inputs (the extension part)
+        # Get outputs for all inputs
         # We only preparse the "known" part of the sequence
-        outputs = self.get_outputs_partial(self.root, inputs[:-2])
+        outputs = self.get_outputs_partial(self.root, inputs)
 
         for i in range(len(outputs)):
             if outputs[i] == self.retry_output:

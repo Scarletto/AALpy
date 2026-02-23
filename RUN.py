@@ -1,4 +1,4 @@
-def coffee_Lsharp():
+def coffee_Lsharp(extension_rule, separation_rule, use_optimizations):
     from aalpy.utils import load_automaton_from_file, bisimilar
     from aalpy.SULs import MealySUL
     from aalpy.oracles import WpMethodEqOracle
@@ -13,12 +13,16 @@ def coffee_Lsharp():
     # Extension rule options: {None, "SepSeq", "ADS"}
     # Separation rule options: {"SepSeq", "ADS"}
 
-    learned_mealy = run_Lsharp(input_alphabet, sul_mealy, eq_oracle, automaton_type='mealy', extension_rule="ADS", separation_rule="ADS", max_learning_rounds=200, print_level=3, crash_output="F", retry_output="W", goto_outputs=["*"])
-    # learned_mealy = run_Lsharp(input_alphabet, sul_mealy, eq_oracle, automaton_type='mealy', extension_rule="ADS", separation_rule="ADS", max_learning_rounds=200, print_level=3)
+    if use_optimizations:
+        learned_mealy, info = run_Lsharp(input_alphabet, sul_mealy, eq_oracle, automaton_type='mealy', extension_rule=extension_rule, separation_rule=separation_rule, max_learning_rounds=200, print_level=1, return_data=True, crash_output="F", retry_output="W", goto_outputs=["*"])
+    else:
+        learned_mealy, info = run_Lsharp(input_alphabet, sul_mealy, eq_oracle, automaton_type='mealy', extension_rule=extension_rule, separation_rule=separation_rule, max_learning_rounds=200, print_level=1, return_data=True)
 
     assert bisimilar(learned_mealy, mealy_machine)
+
+    return info
     
-def rsa_Lsharp():
+def rsa_Lsharp(extension_rule, separation_rule, use_optimizations):
     from aalpy.utils import load_automaton_from_file, bisimilar
     from aalpy.SULs import MealySUL
     from aalpy.oracles import WpMethodEqOracle
@@ -33,12 +37,16 @@ def rsa_Lsharp():
     # Extension rule options: {None, "SepSeq", "ADS"}
     # Separation rule options: {"SepSeq", "ADS"}
 
-    learned_mealy = run_Lsharp(input_alphabet, sul_mealy, eq_oracle, automaton_type='mealy', extension_rule="ADS", separation_rule="ADS", max_learning_rounds=200, print_level=1, crash_output="Alert Fatal (Unexpected message)", goto_outputs=["ChangeCipherSpec & Finished"])
-    # learned_mealy = run_Lsharp(input_alphabet, sul_mealy, eq_oracle, automaton_type='mealy', extension_rule="ADS", separation_rule="ADS", max_learning_rounds=200, print_level=1)
+    if use_optimizations:
+        learned_mealy, info = run_Lsharp(input_alphabet, sul_mealy, eq_oracle, automaton_type='mealy', extension_rule=extension_rule, separation_rule=separation_rule, max_learning_rounds=200, print_level=1, return_data=True, crash_output="Alert Fatal (Unexpected message)", goto_outputs=["ChangeCipherSpec & Finished"])
+    else:
+        learned_mealy, info = run_Lsharp(input_alphabet, sul_mealy, eq_oracle, automaton_type='mealy', extension_rule=extension_rule, separation_rule=separation_rule, max_learning_rounds=200, print_level=1, return_data=True)
 
     assert bisimilar(learned_mealy, mealy_machine)
 
-def haraka_Lsharp():
+    return info
+
+def haraka_Lsharp(extension_rule, separation_rule, use_optimizations):
     from aalpy.utils import load_automaton_from_file, bisimilar
     from aalpy.SULs import MealySUL
     from aalpy.oracles import WpMethodEqOracle
@@ -53,12 +61,16 @@ def haraka_Lsharp():
     # Extension rule options: {None, "SepSeq", "ADS"}
     # Separation rule options: {"SepSeq", "ADS"}
 
-    #learned_mealy = run_Lsharp(input_alphabet, sul_mealy, eq_oracle, automaton_type='mealy', extension_rule=None, separation_rule="ADS", max_learning_rounds=200, print_level=1, crash_output=" 221", retry_output=" 500")
-    learned_mealy = run_Lsharp(input_alphabet, sul_mealy, eq_oracle, automaton_type='mealy', extension_rule=None, separation_rule="ADS", max_learning_rounds=200, print_level=1)
+    if use_optimizations:
+        learned_mealy, info = run_Lsharp(input_alphabet, sul_mealy, eq_oracle, automaton_type='mealy', extension_rule=extension_rule, separation_rule=separation_rule, max_learning_rounds=200, print_level=1, return_data=True, crash_output=" 221", retry_output=" 500")
+    else:
+        learned_mealy, info = run_Lsharp(input_alphabet, sul_mealy, eq_oracle, automaton_type='mealy', extension_rule=extension_rule, separation_rule=separation_rule, max_learning_rounds=200, print_level=1, return_data=True)
 
     assert bisimilar(learned_mealy, mealy_machine)
 
-def openssh_Lsharp():
+    return info
+
+def openssh_Lsharp(extension_rule, separation_rule, use_optimizations):
     from aalpy.utils import load_automaton_from_file, bisimilar
     from aalpy.SULs import MealySUL
     from aalpy.oracles import WpMethodEqOracle
@@ -73,10 +85,33 @@ def openssh_Lsharp():
     # Extension rule options: {None, "SepSeq", "ADS"}
     # Separation rule options: {"SepSeq", "ADS"}
 
-    # learned_mealy = run_Lsharp(input_alphabet, sul_mealy, eq_oracle, automaton_type='mealy', extension_rule=None, separation_rule="ADS", max_learning_rounds=200, print_level=1, crash_output=" 221", retry_output=" 500")
-    learned_mealy = run_Lsharp(input_alphabet, sul_mealy, eq_oracle, automaton_type='mealy', extension_rule="SepSeq", separation_rule="ADS", max_learning_rounds=200, print_level=1)
+    if use_optimizations:
+        learned_mealy, info = run_Lsharp(input_alphabet, sul_mealy, eq_oracle, automaton_type='mealy', extension_rule=extension_rule, separation_rule=separation_rule, max_learning_rounds=200, print_level=1, return_data=True, crash_output=" DISCONNECT", retry_output=" CH_NONE")
+    else:
+        learned_mealy, info = run_Lsharp(input_alphabet, sul_mealy, eq_oracle, automaton_type='mealy', extension_rule=extension_rule, separation_rule=separation_rule, max_learning_rounds=200, print_level=1, return_data=True)
 
     assert bisimilar(learned_mealy, mealy_machine)
 
+    return info
 
-haraka_Lsharp()
+def get_and_write_results_for_all_parameters(testing_function):
+    extension_rules = [None, "SepSeq", "ADS"]
+    separation_rules = ["SepSeq", "ADS"]
+    optimization_options = [False, True]
+
+    results = []
+
+    for extension_rule in extension_rules:
+        for separation_rule in separation_rules:
+            for use_optimizations in optimization_options:
+                print(f'Testing with extension_rule={extension_rule}, separation_rule={separation_rule}, use_optimizations={use_optimizations}')
+                process_info = testing_function(extension_rule, separation_rule, use_optimizations)
+                results.append((extension_rule, separation_rule, use_optimizations, process_info))
+
+    # Write results to a file
+    with open(f'CRG_results/results_{testing_function.__name__}.txt', 'w') as f:
+        for extension_rule, separation_rule, use_optimizations, info in results:
+            f.write(f'Extension Rule: {extension_rule}, Separation Rule: {separation_rule}, Use Optimizations: {use_optimizations}\n')
+            f.write(f'Learning Rounds: {info["learning_rounds"]}\nLearning Queries: {info["queries_learning"]}\nLearning Steps: {info["steps_learning"]}\nEQ Queries: {info["queries_eq_oracle"]}\nEQ Steps: {info["steps_eq_oracle"]}\nTotal Time: {info["total_time"]:.2f} seconds\nEQ Query Time: {info["eq_oracle_time"]:.2f} seconds\nLearning Time: {info["learning_time"]:.2f} seconds\n\n')
+
+get_and_write_results_for_all_parameters(openssh_Lsharp)

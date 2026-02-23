@@ -187,10 +187,10 @@ class LSharpLearner:
 
     def find_basis_candidates(self, new_frontier):
         """Find all basis states that could potentially be equivalent to this frontier"""
-        return {
+        return [
             basis for basis in self.basis
             if not self.states_are_apart(basis, new_frontier)
-        }
+        ]
 
     def explore_frontier(self, basis_state, inp):
         """
