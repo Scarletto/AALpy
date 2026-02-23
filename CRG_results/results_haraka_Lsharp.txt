@@ -1,0 +1,60 @@
+Extension Rule: None, Separation Rule: SepSeq, Use Optimizations: False
+Learning Rounds: 18
+Learning Queries: 2264
+Learning Steps: 12409
+EQ Queries: 67839
+EQ Steps: 349537
+Total Time: 2.25 seconds
+EQ Query Time: 0.55 seconds
+Learning Time: 1.70 seconds
+
+Extension Rule: None, Separation Rule: ADS, Use Optimizations: False
+Learning Rounds: 14
+Learning Queries: 1909
+Learning Steps: 11098
+EQ Queries: 29623
+EQ Steps: 158183
+Total Time: 17.88 seconds
+EQ Query Time: 0.19 seconds
+Learning Time: 17.69 seconds
+
+Extension Rule: SepSeq, Separation Rule: SepSeq, Use Optimizations: False
+Learning Rounds: 18
+Learning Queries: 1694
+Learning Steps: 9554
+EQ Queries: 67839
+EQ Steps: 349537
+Total Time: 1.84 seconds
+EQ Query Time: 0.45 seconds
+Learning Time: 1.39 seconds
+
+Extension Rule: SepSeq, Separation Rule: ADS, Use Optimizations: False
+Learning Rounds: 14
+Learning Queries: 1568
+Learning Steps: 9466
+EQ Queries: 51096
+EQ Steps: 308403
+Total Time: 4.69 seconds
+EQ Query Time: 0.39 seconds
+Learning Time: 4.30 seconds
+
+Extension Rule: ADS, Separation Rule: SepSeq, Use Optimizations: False
+Learning Rounds: 16
+Learning Queries: 1518
+Learning Steps: 9212
+EQ Queries: 67837
+EQ Steps: 349527
+Total Time: 16.01 seconds
+EQ Query Time: 0.43 seconds
+Learning Time: 15.58 seconds
+
+Extension Rule: ADS, Separation Rule: ADS, Use Optimizations: False
+Learning Rounds: 15
+Learning Queries: 1445
+Learning Steps: 8826
+EQ Queries: 67836
+EQ Steps: 349524
+Total Time: 17.32 seconds
+EQ Query Time: 0.41 seconds
+Learning Time: 16.91 seconds
+
