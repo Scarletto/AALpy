@@ -404,6 +404,8 @@ class ObservationTree:
                 return first.parent == second.parent
             case (MealyRetryLeaf(), _):
                 return first.parent == second
+            case (_, MealyRetryLeaf()):
+                return second.parent == first
             
             case (MealyGotoNode(), MealyGotoNode()):
                 return first.representing_node == second.representing_node

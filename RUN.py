@@ -114,4 +114,7 @@ def get_and_write_results_for_all_parameters(testing_function):
             f.write(f'Extension Rule: {extension_rule}, Separation Rule: {separation_rule}, Use Optimizations: {use_optimizations}\n')
             f.write(f'Learning Rounds: {info["learning_rounds"]}\nLearning Queries: {info["queries_learning"]}\nLearning Steps: {info["steps_learning"]}\nEQ Queries: {info["queries_eq_oracle"]}\nEQ Steps: {info["steps_eq_oracle"]}\nTotal Time: {info["total_time"]:.2f} seconds\nEQ Query Time: {info["eq_oracle_time"]:.2f} seconds\nLearning Time: {info["learning_time"]:.2f} seconds\n\n')
 
+get_and_write_results_for_all_parameters(coffee_Lsharp)
+get_and_write_results_for_all_parameters(rsa_Lsharp)
+get_and_write_results_for_all_parameters(haraka_Lsharp)
 get_and_write_results_for_all_parameters(openssh_Lsharp)

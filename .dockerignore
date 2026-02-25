@@ -1,0 +1,34 @@
+# Version control
+.git
+.gitignore
+
+# Python artefacts
+__pycache__
+*.py[cod]
+*.egg-info
+dist
+build
+*.egg
+
+# IDE / editor
+.vscode
+.idea
+*.swp
+*.swo
+
+# Nix
+flake.lock
+flake.nix
+result
+
+# Docs & images (not needed for benchmarking)
+docs/
+notebooks/
+CRG_results/
+jAlergia/
+*.PNG
+*.png
+*.pdf
+
+# Runtime output
+RUN/

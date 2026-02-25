@@ -41,7 +41,7 @@ class Apartness:
                     first_successor = first_node.get_successor(input_val)
                     second_successor = second_node.get_successor(input_val)
 
-                    # If inputs are equal and successors have inferred subtrees, skip further exploration because they cannot provide distinguishing information
+                    # If outputs are equal and successors have inferred subtrees, skip further exploration because they cannot provide distinguishing information
                     if first_successor.has_inferred_subtree or second_successor.has_inferred_subtree:
                         continue
 
